@@ -1,0 +1,45 @@
+{
+  "name": "codex-feishu-skill",
+  "version": "0.1.0",
+  "description": "Feishu-native remote coding bridge for Codex with streaming updates, approval cards, and thread handoff",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "typecheck": "tsc --noEmit",
+    "doctor": "bash scripts/doctor.sh",
+    "dev": "tsx src/main.ts"
+  },
+  "keywords": [
+    "codex",
+    "feishu",
+    "lark",
+    "skill",
+    "bridge",
+    "agent",
+    "im",
+    "automation"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/JayZtwo/codex-feishu.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JayZtwo/codex-feishu/issues"
+  },
+  "homepage": "https://github.com/JayZtwo/codex-feishu#readme",
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "1.60.0",
+    "markdown-it": "^14.1.1"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "^14.1.2",
+    "@types/node": "^22",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
