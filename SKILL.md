@@ -42,6 +42,8 @@ Use `doctor` when the user reports a symptom.
 - This skill is focused on the Codex + Feishu bridge.
 - Before any subcommand other than `setup`, check whether `~/.codex-feishu/config.env` exists.
 - If config is missing, show `SKILL_DIR/config.env.example`, explain the required Feishu fields, and stop.
+- On macOS and other POSIX shells, use the `scripts/*.sh` entry points.
+- On Windows, use `powershell -NoProfile -ExecutionPolicy Bypass -File ...` with the `.ps1` entry points.
 
 ## Quick start order
 
@@ -75,27 +77,31 @@ Recommended defaults:
 - Show `SKILL_DIR/config.env.example`.
 - Explain the Feishu-specific fields and the two-publish backend checklist.
 - Create `~/.codex-feishu/{data,logs,runtime,data/messages}`.
-- Set `chmod 600 ~/.codex-feishu/config.env` if the file exists.
+- On POSIX, set `chmod 600 ~/.codex-feishu/config.env` if the file exists.
 - Tell the user to run `/codex-feishu start` after the first publish is approved.
 
 ### `start`
 
 - Verify config exists.
-- Run `bash "SKILL_DIR/scripts/daemon.sh" start`.
+- On POSIX, run `bash "SKILL_DIR/scripts/daemon.sh" start`.
+- On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File "SKILL_DIR/scripts/daemon.ps1" start`.
 - If start fails, send the user to `/codex-feishu doctor` and `/codex-feishu logs`.
 
 ### `stop`
 
-Run `bash "SKILL_DIR/scripts/daemon.sh" stop`.
+On POSIX, run `bash "SKILL_DIR/scripts/daemon.sh" stop`.
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File "SKILL_DIR/scripts/daemon.ps1" stop`.
 
 ### `status`
 
-Run `bash "SKILL_DIR/scripts/daemon.sh" status`.
+On POSIX, run `bash "SKILL_DIR/scripts/daemon.sh" status`.
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File "SKILL_DIR/scripts/daemon.ps1" status`.
 
 ### `logs`
 
 Extract optional line count `N` (default `50`).
-Run `bash "SKILL_DIR/scripts/daemon.sh" logs N`.
+On POSIX, run `bash "SKILL_DIR/scripts/daemon.sh" logs N`.
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File "SKILL_DIR/scripts/daemon.ps1" logs N`.
 
 ### `reconfigure`
 
@@ -107,7 +113,8 @@ Run `bash "SKILL_DIR/scripts/daemon.sh" logs N`.
 
 ### `doctor`
 
-Run `bash "SKILL_DIR/scripts/doctor.sh"`.
+On POSIX, run `bash "SKILL_DIR/scripts/doctor.sh"`.
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File "SKILL_DIR/scripts/doctor.ps1"`.
 
 Use `SKILL_DIR/references/troubleshooting.md` if the basic checks are insufficient.
 

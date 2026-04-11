@@ -31,6 +31,14 @@
 - 覆盖两次发布流程的后台配置文档
 - 不带凭证、不带运行时状态的公开版默认值
 
+## 支持矩阵
+
+- `macOS`：正式支持，包含主 daemon 链路和 `launchctl` 集成。
+- `Windows`：通过 PowerShell supervisor / install 脚本支持。
+- `Codex App / 桌面版`：只要能提供兼容的 `codex` 可执行文件，就可以接入。
+- `Codex CLI`：要求支持 `codex app-server`，以及 `config/read`、`thread/start`、`turn/start` 这组 RPC。
+- `VS Code 插件`：不是直接集成目标。只有当该安装形态同时暴露兼容的 `codex` 二进制时才可用。
+
 ## 快速开始
 
 1. 克隆仓库
@@ -44,16 +52,32 @@ npm run build
 
 3. 安装到 Codex 技能目录：
 
+macOS / POSIX：
+
 ```bash
 bash scripts/install-codex.sh
+```
+
+Windows：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
 4. 按 [config.env.example](./config.env.example) 创建 `~/.codex-feishu/config.env`
 5. 按 [references/setup-guides.md](./references/setup-guides.md) 配置 Feishu 后台
 6. 启动 bridge：
 
+macOS / POSIX：
+
 ```bash
 bash scripts/daemon.sh start
+```
+
+Windows：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 ```
 
 或者在 Codex 里执行：
@@ -95,6 +119,12 @@ bash scripts/daemon.sh start
 - `/codex-feishu doctor`
 
 详细说明见 [references/usage.md](./references/usage.md)。
+
+## 兼容性说明
+
+- 现在的 `doctor` 不只检查 `codex --version`，还会实际探测 `codex app-server` 握手是否可用。
+- 较旧的 Codex 版本可能看起来“CLI 存在”，但如果没有这套 app-server RPC，bridge 仍然不能工作。
+- 如果你机器上有多个 Codex 安装，可以用 `CODEX_FEISHU_CODEX_EXECUTABLE` 指定要接入的那一个。
 
 ## 公开版目标
 

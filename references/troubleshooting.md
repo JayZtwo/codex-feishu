@@ -9,12 +9,15 @@
 1. Run `/codex-feishu doctor` to identify the issue
 2. Check that Node.js >= 20 is installed: `node --version`
 3. Check that Codex CLI is available: `codex --version`
-4. Verify config exists: `ls -la ~/.codex-feishu/config.env`
-5. Check logs for startup errors: `/codex-feishu logs`
+4. Confirm the installed Codex also supports `codex app-server`
+5. Verify config exists: `ls -la ~/.codex-feishu/config.env`
+   Windows: `Get-Item ~/.codex-feishu/config.env`
+6. Check logs for startup errors: `/codex-feishu logs`
 
 **Common causes**:
 - Missing or invalid config.env -- run `/codex-feishu setup`
 - Node.js not found or wrong version -- install Node.js >= 20
+- Codex is too old or from an incompatible install path -- update Codex or point `CODEX_FEISHU_CODEX_EXECUTABLE` at a compatible binary
 - Port or resource conflict -- check if another instance is running with `/codex-feishu status`
 
 ## Messages not received
@@ -82,11 +85,15 @@ If this does not happen, inspect `/codex-feishu logs 200` and confirm you switch
 
 **Symptoms**: Status shows "running" but the process doesn't exist, or start refuses because it thinks a daemon is already running.
 
-The daemon management script (`daemon.sh`) handles stale PID files automatically. If you still encounter issues:
+The daemon management scripts handle stale PID files automatically. If you still encounter issues:
 
 1. Run `/codex-feishu stop` -- it will clean up the stale PID file
 2. If stop also fails, manually remove the PID file:
    ```bash
    rm ~/.codex-feishu/runtime/bridge.pid
+   ```
+   Windows:
+   ```powershell
+   Remove-Item ~/.codex-feishu/runtime/bridge.pid -Force
    ```
 3. Run `/codex-feishu start` to launch a fresh instance

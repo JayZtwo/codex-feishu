@@ -36,6 +36,11 @@ CODEX_FEISHU_APP_SECRET=your-secret
 /codex-feishu start
 ```
 
+Platform-specific entry points:
+
+- macOS / POSIX: `bash scripts/daemon.sh start`
+- Windows: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start`
+
 This writes runtime state to:
 
 - `~/.codex-feishu/runtime/bridge.pid`
@@ -48,6 +53,9 @@ This writes runtime state to:
 /codex-feishu stop
 ```
 
+- macOS / POSIX: `bash scripts/daemon.sh stop`
+- Windows: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 stop`
+
 ## Status
 
 ```text
@@ -56,12 +64,18 @@ This writes runtime state to:
 
 Use this to confirm the daemon is up before configuring long connection in Feishu.
 
+- macOS / POSIX: `bash scripts/daemon.sh status`
+- Windows: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 status`
+
 ## Logs
 
 ```text
 /codex-feishu logs
 /codex-feishu logs 200
 ```
+
+- macOS / POSIX: `bash scripts/daemon.sh logs 200`
+- Windows: `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 logs 200`
 
 Use logs when:
 
@@ -106,6 +120,7 @@ Current checks include:
 
 - Node.js version
 - Codex CLI availability
+- Codex app-server handshake readiness
 - Codex login / auth availability
 - dependency installation
 - daemon bundle freshness

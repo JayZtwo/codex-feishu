@@ -36,6 +36,14 @@ Most IM bridges stop at "send a message to an LLM". This one is aimed at actual 
 - thread picker cards with switch and new-thread actions
 - Operational scripts for install, start, stop, logs, and doctor
 
+## Support matrix
+
+- `macOS`: supported. The repo ships the primary daemon flow here, including `launchctl` integration.
+- `Windows`: supported through the PowerShell supervisor and install scripts in [scripts](./scripts).
+- `Codex app / desktop install`: supported when it exposes a compatible `codex` binary.
+- `Codex CLI`: supported when `codex app-server` plus the `config/read`, `thread/start`, and `turn/start` RPCs are available.
+- `VS Code plugin`: not a direct integration target. It works only if that install path also provides a compatible `codex` executable.
+
 ## Quick start
 
 1. Clone this repository.
@@ -49,16 +57,32 @@ npm run build
 
 3. Copy or symlink the folder into your Codex skills directory:
 
+macOS / POSIX:
+
 ```bash
 bash scripts/install-codex.sh
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
 4. Create `~/.codex-feishu/config.env` from [config.env.example](./config.env.example).
 5. Follow the Feishu backend guide in [references/setup-guides.md](./references/setup-guides.md).
 6. Start the bridge:
 
+macOS / POSIX:
+
 ```bash
 bash scripts/daemon.sh start
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 ```
 
 Or from Codex:
@@ -100,6 +124,12 @@ If you skip either publish, the bot usually looks "half configured" and fails in
 - `/codex-feishu doctor`
 
 More detail: [references/usage.md](./references/usage.md)
+
+## Compatibility notes
+
+- `doctor` now probes the real `codex app-server` handshake, not just `codex --version`.
+- Older Codex builds may pass a plain CLI check but still fail here if they do not expose the app-server RPCs this bridge uses.
+- If you keep multiple Codex installs, point `CODEX_FEISHU_CODEX_EXECUTABLE` at the compatible binary you want this bridge to use.
 
 ## Repository goals
 

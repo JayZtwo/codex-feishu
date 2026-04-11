@@ -74,8 +74,16 @@ Open **Permissions & Scopes** and add these tenant scopes:
 
 Run:
 
+macOS / POSIX:
+
 ```bash
 bash /path/to/codex-feishu/scripts/daemon.sh start
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\path\to\codex-feishu\scripts\daemon.ps1 start
 ```
 
 Or from Codex:

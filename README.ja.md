@@ -16,6 +16,14 @@
 - 画像とファイルの Feishu 返送
 - `doctor` による診断
 
+## 対応マトリクス
+
+- `macOS`: 正式サポート。主要なデーモン経路と `launchctl` 連携を含みます。
+- `Windows`: PowerShell の supervisor / install スクリプト経由でサポートします。
+- `Codex app / デスクトップ版`: 互換性のある `codex` 実行ファイルを提供していれば利用できます。
+- `Codex CLI`: `codex app-server` と `config/read`、`thread/start`、`turn/start` RPC が使えることが前提です。
+- `VS Code plugin`: 直接統合はしていません。互換性のある `codex` バイナリも提供する場合のみ利用可能です。
+
 ## クイックスタート
 
 1. リポジトリを clone
@@ -29,16 +37,32 @@ npm run build
 
 3. Codex skills にインストール
 
+macOS / POSIX:
+
 ```bash
 bash scripts/install-codex.sh
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-codex.ps1
 ```
 
 4. [config.env.example](./config.env.example) を元に `~/.codex-feishu/config.env` を作成
 5. [references/setup-guides.md](./references/setup-guides.md) に沿って Feishu 側を設定
 6. ブリッジ起動
 
+macOS / POSIX:
+
 ```bash
 bash scripts/daemon.sh start
+```
+
+Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 ```
 
 または Codex から:
@@ -58,6 +82,12 @@ bash scripts/daemon.sh start
 7. `im.message.receive_v1` を追加
 8. `card.action.trigger` を追加
 9. 2 回目の publish
+
+## 互換性メモ
+
+- `doctor` は `codex --version` だけでなく、実際の `codex app-server` ハンドシェイクも検証します。
+- 古い Codex は CLI 自体が存在していても、必要な app-server RPC がなければこの bridge では利用できません。
+- Codex を複数インストールしている場合は、`CODEX_FEISHU_CODEX_EXECUTABLE` で利用するバイナリを固定できます。
 
 ## プライバシー
 

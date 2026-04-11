@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node scripts/build.js",
     "typecheck": "tsc --noEmit",
-    "doctor": "bash scripts/doctor.sh",
+    "doctor": "node scripts/doctor.mjs",
     "dev": "tsx src/main.ts"
   },
   "keywords": [

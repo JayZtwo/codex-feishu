@@ -138,11 +138,24 @@ const CODEX_AUTH_ERROR_PATTERNS = [
   /authentication.*failed/i,
 ];
 
+const CODEX_CAPABILITY_ERROR_PATTERNS = [
+  /unknown (?:command|subcommand).*\bapp-server\b/i,
+  /unrecognized (?:command|subcommand).*\bapp-server\b/i,
+  /no such command.*\bapp-server\b/i,
+  /\bapp-server\b.*(?:not supported|unsupported|unknown|unrecognized)/i,
+  /method not found.*config\/read/i,
+  /unknown method.*config\/read/i,
+  /method not found.*thread\/start/i,
+  /unknown method.*thread\/start/i,
+  /method not found.*turn\/start/i,
+  /unknown method.*turn\/start/i,
+];
+
 const CODEX_NOISE_PATTERNS = [
   /^Reading prompt from stdin/i,
 ];
 
-export type CodexUserErrorKind = 'workspace' | 'quota' | 'rate_limit' | 'capacity' | 'auth' | false;
+export type CodexUserErrorKind = 'workspace' | 'quota' | 'rate_limit' | 'capacity' | 'auth' | 'capability' | false;
 
 export function classifyCodexUserError(text: string): CodexUserErrorKind {
   if (!text) return false;
@@ -151,6 +164,7 @@ export function classifyCodexUserError(text: string): CodexUserErrorKind {
   if (CODEX_RATE_LIMIT_ERROR_PATTERNS.some((pattern) => pattern.test(text))) return 'rate_limit';
   if (CODEX_CAPACITY_ERROR_PATTERNS.some((pattern) => pattern.test(text))) return 'capacity';
   if (CODEX_AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(text))) return 'auth';
+  if (CODEX_CAPABILITY_ERROR_PATTERNS.some((pattern) => pattern.test(text))) return 'capability';
   return false;
 }
 
@@ -188,6 +202,16 @@ function summarizeCodexErrorDetail(text: string): string {
     /unauthorized/i,
     /invalid.*api.?key/i,
     /authentication.*failed/i,
+    /unknown (?:command|subcommand).*\bapp-server\b/i,
+    /unrecognized (?:command|subcommand).*\bapp-server\b/i,
+    /no such command.*\bapp-server\b/i,
+    /\bapp-server\b.*(?:not supported|unsupported|unknown|unrecognized)/i,
+    /method not found.*config\/read/i,
+    /unknown method.*config\/read/i,
+    /method not found.*thread\/start/i,
+    /unknown method.*thread\/start/i,
+    /method not found.*turn\/start/i,
+    /unknown method.*turn\/start/i,
   ];
 
   for (const pattern of prioritized) {
@@ -239,6 +263,12 @@ export function humanizeCodexError(text: string): string {
       return [
         'Codex 当前不可用：登录状态或 API 凭证失效。',
         '处理方式：执行 `codex auth login`，或检查 OPENAI_API_KEY / CODEX_API_KEY。',
+        ...(detail ? [`详情：${detail}`] : []),
+      ].join('\n');
+    case 'capability':
+      return [
+        'Codex 当前不可用：当前安装的 Codex 不兼容 codex-feishu 所需的 app-server 能力。',
+        '处理方式：更新 Codex 到支持 `codex app-server`、`config/read`、`thread/start`、`turn/start` 的版本，或把 CODEX_FEISHU_CODEX_EXECUTABLE 指向兼容的 codex 二进制。',
         ...(detail ? [`详情：${detail}`] : []),
       ].join('\n');
     default:

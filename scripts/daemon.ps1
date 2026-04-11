@@ -2,7 +2,7 @@
 .SYNOPSIS
   Windows entry point — delegates to supervisor-windows.ps1.
 .DESCRIPTION
-  Usage:  powershell -File scripts\daemon.ps1 start|stop|status|logs|install-service|uninstall-service
+  Usage:  powershell -File scripts\daemon.ps1 start|stop|status|logs|doctor|install-service|uninstall-service
 #>
 param(
     [Parameter(Position=0)]
