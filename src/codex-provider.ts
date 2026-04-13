@@ -115,6 +115,12 @@ const CODEX_QUOTA_ERROR_PATTERNS = [
   /billing_hard_limit_reached/i,
   /quota.*(?:exceeded|exhausted|used up|reached)/i,
   /credit balance .*too low/i,
+  /you(?:['\u2019])?ve hit your usage limit/i,
+  /hit your usage limit/i,
+  /usage limit/i,
+  /upgrade to pro/i,
+  /codex\/settings\/usage/i,
+  /purchase more credits/i,
 ];
 
 const CODEX_RATE_LIMIT_ERROR_PATTERNS = [
@@ -193,6 +199,10 @@ function summarizeCodexErrorDetail(text: string): string {
     /insufficient_quota/i,
     /billing_hard_limit_reached/i,
     /quota/i,
+    /you(?:['\u2019])?ve hit your usage limit/i,
+    /usage limit/i,
+    /purchase more credits/i,
+    /codex\/settings\/usage/i,
     /429\b/,
     /rate limit/i,
     /server_overloaded/i,
@@ -225,6 +235,18 @@ function summarizeCodexErrorDetail(text: string): string {
   return fallback.length > 220 ? `${fallback.slice(0, 220)}...` : fallback;
 }
 
+function extractUsageLimitRetryAt(text: string): string {
+  const match = text.match(/\btry again at\s+([^\r\n]+)/i);
+  if (!match) {
+    return '';
+  }
+
+  return match[1]
+    .replace(/[.。]\s*$/, '')
+    .trim()
+    .slice(0, 120);
+}
+
 export function humanizeCodexError(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) {
@@ -233,6 +255,7 @@ export function humanizeCodexError(text: string): string {
 
   const kind = classifyCodexUserError(trimmed);
   const detail = summarizeCodexErrorDetail(trimmed);
+  const retryAt = kind === 'quota' ? extractUsageLimitRetryAt(trimmed) : '';
 
   switch (kind) {
     case 'workspace':
@@ -243,8 +266,10 @@ export function humanizeCodexError(text: string): string {
       ].join('\n');
     case 'quota':
       return [
-        'Codex 当前不可用：额度已用完，或计费额度被限制。',
-        '处理方式：检查 OpenAI / Codex 的 billing 与 quota，恢复后重试。',
+        'Codex 当前不可用：当前账号 / workspace 的 Codex 使用额度已用尽，或 credits 不足。',
+        ...(retryAt ? [`可重试时间：${retryAt}`] : []),
+        '处理方式：打开 Codex usage 页面确认额度；需要时升级 Pro 或购买 credits；如果已有恢复时间，等到该时间后重试。',
+        'Usage 页面：https://chatgpt.com/codex/settings/usage',
         ...(detail ? [`详情：${detail}`] : []),
       ].join('\n');
     case 'rate_limit':

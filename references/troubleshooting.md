@@ -43,6 +43,12 @@
 3. Check logs for permission forwarding and callback handling
 4. Trigger a deterministic permission test with `测试授权链路` or `/permtest`
 
+## Codex usage limit
+
+**Symptoms**: Feishu shows `You've hit your usage limit`, `purchase more credits`, or asks you to retry at a later time.
+
+This is returned by Codex itself, not by Feishu. Open <https://chatgpt.com/codex/settings/usage> to check quota, upgrade or purchase credits if needed, then retry after the displayed reset time.
+
 ## Thread picker card does not respond
 
 **Symptoms**: The thread list card appears, but button clicks do nothing.
