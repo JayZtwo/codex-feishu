@@ -35,23 +35,24 @@ CODEX_FEISHU_APP_SECRET=your-secret
 
 ## 3. Add required scopes
 
-Open **Permissions & Scopes** and add these tenant scopes:
+Open **Permissions & Scopes** and add these tenant scopes. You can copy this block directly:
 
 ```json
 {
   "scopes": {
     "tenant": [
-      "im:message:send_as_bot",
-      "im:message:readonly",
-      "im:message.p2p_msg:readonly",
+      "cardkit:card:read",
+      "cardkit:card:write",
+      "im:chat:read",
+      "im:chat:readonly",
       "im:message.group_at_msg:readonly",
-      "im:message:update",
+      "im:message.p2p_msg:readonly",
       "im:message.reactions:read",
       "im:message.reactions:write_only",
-      "im:chat:read",
-      "im:resource",
-      "cardkit:card:write",
-      "cardkit:card:read"
+      "im:message:readonly",
+      "im:message:send_as_bot",
+      "im:message:update",
+      "im:resource"
     ],
     "user": []
   }
