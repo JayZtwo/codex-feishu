@@ -84,6 +84,33 @@ function permissionResolutionFromAction(action: string): {
   return null;
 }
 
+function buildInboundDedupKey(message: InboundMessage): string {
+  const base = `feishu:${message.address.chatId}:${message.messageId}`;
+  if (message.callbackData) {
+    return `${base}:callback:${message.callbackData}`;
+  }
+  return `${base}:message`;
+}
+
+function shouldResetSdkSessionOnError(errorMessage: string): boolean {
+  const normalized = normalizeText(errorMessage).toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+
+  return (
+    normalized.includes('resuming session with different model')
+    || normalized.includes('no such session')
+    || normalized.includes('no such thread')
+    || normalized.includes('session not found')
+    || normalized.includes('thread not found')
+    || normalized.includes('invalid thread')
+    || normalized.includes('failed to resume')
+    || (normalized.includes('thread/resume') && normalized.includes('not found'))
+    || (normalized.includes('resume') && normalized.includes('session'))
+  );
+}
+
 type ActiveTask = {
   abortController: AbortController;
 };
@@ -124,6 +151,13 @@ export class FeishuBridgeService {
   }
 
   private async handleInbound(message: InboundMessage): Promise<void> {
+    this.store.cleanupExpiredDedup();
+    const dedupKey = buildInboundDedupKey(message);
+    if (this.store.checkDedup(dedupKey)) {
+      return;
+    }
+    this.store.insertDedup(dedupKey);
+
     if (message.callbackData) {
       await this.handleCallback(message);
       return;
@@ -455,9 +489,10 @@ export class FeishuBridgeService {
       });
 
       if (binding.id) {
-        if (result.sdkSessionId && !result.hasError) {
-          this.store.updateChannelBinding(binding.id, { sdkSessionId: result.sdkSessionId });
-        } else if (result.hasError) {
+        const nextSdkSessionId = result.sdkSessionId || binding.sdkSessionId;
+        if (nextSdkSessionId && !shouldResetSdkSessionOnError(result.errorMessage)) {
+          this.store.updateChannelBinding(binding.id, { sdkSessionId: nextSdkSessionId });
+        } else if (result.hasError && shouldResetSdkSessionOnError(result.errorMessage)) {
           this.store.updateChannelBinding(binding.id, { sdkSessionId: '' });
         }
       }

@@ -67,6 +67,38 @@ export async function runConversation(
   }
 }
 
+const OPERATIONAL_ASSISTANT_HISTORY_PATTERNS = [
+  /you(?:['\u2019])?ve hit your usage limit/i,
+  /upgrade to pro/i,
+  /purchase more credits/i,
+  /codex\/settings\/usage/i,
+  /^codex 当前不可用/i,
+  /^error(?:\s|$)/i,
+  /^permission response recorded\.?$/i,
+  /^unknown command:/i,
+  /^working directory set to/i,
+  /^mode set to/i,
+  /^new thread created/i,
+  /^switched thread/i,
+  /^当前线程忙碌中$/i,
+  /^no task is currently running\.?$/i,
+  /^stopping current task/i,
+  /^thread not found\.?$/i,
+];
+
+function shouldIncludeConversationHistoryMessage(role: 'user' | 'assistant', content: string): boolean {
+  const trimmed = content.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  if (role === 'user') {
+    return !trimmed.startsWith('/');
+  }
+
+  return !OPERATIONAL_ASSISTANT_HISTORY_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 async function executeConversation(
   store: BridgeStore,
   llm: LLMProvider,
@@ -87,7 +119,7 @@ async function executeConversation(
   const history = recentMessages.slice(0, -1).map((message) => ({
     role: message.role as 'user' | 'assistant',
     content: message.content,
-  }));
+  })).filter((message) => shouldIncludeConversationHistoryMessage(message.role, message.content));
 
   const streamAbortController = new AbortController();
   if (options?.abortSignal) {
