@@ -1,5 +1,5 @@
 export type BridgeMode = 'code' | 'plan' | 'ask';
-export type ChannelType = 'feishu';
+export type ChannelType = 'feishu' | 'rokid';
 
 export interface ChannelAddress {
   channelType: ChannelType;
@@ -185,6 +185,7 @@ export interface InboundMessage {
   callbackMessageId?: string;
   raw?: unknown;
   attachments?: FileAttachment[];
+  abortSignal?: AbortSignal;
 }
 
 export interface SendResult {
@@ -224,4 +225,31 @@ export interface ThreadSummary {
 export interface ThreadDialogue {
   userText: string;
   assistantText: string;
+}
+
+export interface BridgeAdapter {
+  channelType: ChannelType;
+  displayName: string;
+  start(handler: (message: InboundMessage) => Promise<void>): Promise<void>;
+  stop(): Promise<void>;
+  isRunning(): boolean;
+  sendText(chatId: string, text: string, replyToMessageId?: string): Promise<SendResult>;
+  sendHtml(chatId: string, html: string, replyToMessageId?: string): Promise<SendResult>;
+  sendMarkdown(chatId: string, markdown: string, replyToMessageId?: string): Promise<SendResult>;
+  sendPermissionRequest(chatId: string, body: string, permissionId: string, replyToMessageId?: string): Promise<SendResult>;
+  sendThreadPicker(
+    chatId: string,
+    threads: ThreadSummary[],
+    currentSessionId: string,
+    replyToMessageId?: string,
+  ): Promise<SendResult>;
+  sendCommandReply(chatId: string, text: string, replyToMessageId?: string): Promise<void>;
+  beginResponse(chatId: string, replyToMessageId?: string): void;
+  updateResponse(chatId: string, fullText: string, tools: ToolProgress[]): void;
+  finalizeResponse(
+    chatId: string,
+    status: 'completed' | 'interrupted' | 'error',
+    finalText: string,
+    replyToMessageId?: string,
+  ): Promise<boolean>;
 }

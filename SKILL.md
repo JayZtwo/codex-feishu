@@ -1,9 +1,11 @@
 ---
 name: codex-feishu
 description: |
-  Run and diagnose a dedicated Codex-to-Feishu bridge so Codex can chat through
-  a Feishu/Lark bot. Use for setup, start, stop, status, logs, reconfigure, and
-  doctor flows for the codex-feishu daemon. Do not use for generic Feishu SDK work.
+  Run and diagnose a dedicated Codex-to-Feishu bridge, optionally with a Rokid
+  Lingzhu HTTP/SSE trigger endpoint, so Codex can chat through Feishu/Lark and
+  supported glasses workflows. Use for setup, start, stop, status, logs,
+  reconfigure, and doctor flows for the codex-feishu daemon. Do not use for
+  generic Feishu SDK work.
 argument-hint: "setup | start | stop | status | logs [N] | reconfigure | doctor"
 allowed-tools:
   - Bash
@@ -39,7 +41,7 @@ Use `doctor` when the user reports a symptom.
 
 ## Runtime and config rules
 
-- This skill is focused on the Codex + Feishu bridge.
+- This skill is focused on the Codex + Feishu bridge, with an optional Rokid Lingzhu trigger endpoint.
 - Before any subcommand other than `setup`, check whether `~/.codex-feishu/config.env` exists.
 - If config is missing, show `SKILL_DIR/config.env.example`, explain the required Feishu fields, and stop.
 - On macOS and other POSIX shells, use the `scripts/*.sh` entry points.
@@ -69,6 +71,15 @@ Recommended defaults:
 
 - `CODEX_FEISHU_DEFAULT_MODE=code`
 - `CODEX_FEISHU_DOMAIN=https://open.feishu.cn`
+
+Optional Rokid Lingzhu custom-agent endpoint:
+
+- `CODEX_FEISHU_ROKID_ENABLED=true`
+- `CODEX_FEISHU_ROKID_HOST=127.0.0.1`
+- `CODEX_FEISHU_ROKID_PORT=8787`
+- `CODEX_FEISHU_ROKID_PATH=/rokid/agent`
+- `CODEX_FEISHU_ROKID_SECRET=<long random token>`
+- `CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true`
 
 ## Subcommands
 

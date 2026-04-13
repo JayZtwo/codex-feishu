@@ -9,6 +9,7 @@
 ## 为什么值得用
 
 - Codex 到 Feishu 的长连接桥接
+- 可选 Rokid 灵珠自定义智能体 HTTP/SSE 入口
 - 流式卡片更新
 - Feishu 内联权限审批卡片
 - 桌面端线程忙碌时的只读跟随
@@ -93,6 +94,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 - 桌面端线程正在忙时，飞书只读跟随，不会抢线程
 - 通过线程列表和切换命令回到特定上下文继续聊
 
+## Rokid 灵珠眼镜触发
+
+如果你要让 Rokid 眼镜触发 Codex，可以启用可选的 Lingzhu 自定义智能体入口：
+
+```bash
+CODEX_FEISHU_ROKID_ENABLED=true
+CODEX_FEISHU_ROKID_HOST=127.0.0.1
+CODEX_FEISHU_ROKID_PORT=8787
+CODEX_FEISHU_ROKID_PATH=/rokid/agent
+CODEX_FEISHU_ROKID_SECRET=replace-with-a-long-random-token
+CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true
+```
+
+然后在灵珠的“三方智能体导入 / 自定义智能体”流程里配置公网 HTTPS 地址，反向代理到本机 `http://127.0.0.1:8787/rokid/agent`。详细说明见 [references/rokid-lingzhu.md](./references/rokid-lingzhu.md)。
+
+眼镜端默认会自动允许 Codex 权限请求，因为它不是一个适合审批的交互面。公网暴露时务必使用 HTTPS、长随机 secret 和可选用户/设备 allowlist；如果你想强制审批，可以设 `CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=false`。
+
 ## Feishu 后台配置顺序
 
 必须按这个顺序来：
@@ -128,7 +146,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 
 ## 公开版目标
 
-- 专注 Codex + Feishu 这一条产品路径
+- 专注 Codex + Feishu，并提供可选 Rokid 灵珠触发入口
 - 不把 secrets、运行时状态、聊天历史提交进 git
 - 让不了解内部背景的人也能按文档独立搭起来
 
@@ -137,7 +155,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 - [SKILL.md](./SKILL.md)：Codex 技能入口
 - [src](./src)：运行时代码
 - [scripts](./scripts)：守护进程与安装脚本
-- [references](./references)：飞书配置与排障文档
+- [references](./references)：飞书配置、Rokid 灵珠接入与排障文档
 
 ## 隐私说明
 

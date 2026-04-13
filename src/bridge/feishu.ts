@@ -6,6 +6,7 @@ import * as lark from '@larksuiteoapi/node-sdk';
 import type { Config } from '../config.js';
 import type { JsonFileStore } from '../store.js';
 import type {
+  BridgeAdapter,
   FileAttachment,
   InboundMessage,
   SendResult,
@@ -87,7 +88,10 @@ function normalizeCallbackText(rawText: string): string {
   return rawText.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 }
 
-export class FeishuAdapter {
+export class FeishuAdapter implements BridgeAdapter {
+  readonly channelType = 'feishu' as const;
+  readonly displayName = 'Feishu';
+
   private readonly seenMessageIds = new Map<string, true>();
   private readonly typingReactions = new Map<string, string>();
   private readonly lastIncomingMessageId = new Map<string, string>();

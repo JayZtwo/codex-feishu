@@ -4,6 +4,8 @@ import type { Config } from '../config.js';
 import type { PendingPermissions } from '../permission-gateway.js';
 import type { JsonFileStore, ThreadDialogue, ThreadSummary, ThreadToolState } from '../store.js';
 import type {
+  BridgeAdapter,
+  ChannelType,
   ChannelBinding,
   InboundMessage,
   PermissionRequestPayload,
@@ -85,7 +87,7 @@ function permissionResolutionFromAction(action: string): {
 }
 
 function buildInboundDedupKey(message: InboundMessage): string {
-  const base = `feishu:${message.address.chatId}:${message.messageId}`;
+  const base = `${message.address.channelType}:${message.address.chatId}:${message.messageId}`;
   if (message.callbackData) {
     return `${base}:callback:${message.callbackData}`;
   }
@@ -116,7 +118,8 @@ type ActiveTask = {
 };
 
 export class FeishuBridgeService {
-  private readonly adapter: FeishuAdapter;
+  private readonly adapter: BridgeAdapter;
+  private readonly channelType: ChannelType;
   private readonly sessionChains = new Map<string, Promise<void>>();
   private readonly activeTasks = new Map<string, ActiveTask>();
   private running = false;
@@ -126,8 +129,10 @@ export class FeishuBridgeService {
     private readonly store: JsonFileStore,
     private readonly permissions: PendingPermissions,
     private readonly llm: import('./contracts.js').LLMProvider,
+    adapter?: BridgeAdapter,
   ) {
-    this.adapter = new FeishuAdapter(config, store);
+    this.adapter = adapter ?? new FeishuAdapter(config, store);
+    this.channelType = this.adapter.channelType;
   }
 
   async start(): Promise<void> {
@@ -148,6 +153,10 @@ export class FeishuBridgeService {
 
   isRunning(): boolean {
     return this.running && this.adapter.isRunning();
+  }
+
+  getChannelType(): ChannelType {
+    return this.channelType;
   }
 
   private async handleInbound(message: InboundMessage): Promise<void> {
@@ -263,7 +272,7 @@ export class FeishuBridgeService {
       case '/start':
       case '/help':
         await this.adapter.sendCommandReply(message.address.chatId, [
-          '<b>Codex Feishu</b>',
+          `<b>Codex ${this.adapter.displayName}</b>`,
           '',
           '/new [path] - Start a new thread',
           '/cwd /abs/path - Change working directory',
@@ -289,7 +298,7 @@ export class FeishuBridgeService {
           return;
         }
         this.store.updateChannelBinding(binding.id, { workingDirectory: args });
-        this.store.touchChatThread('feishu', message.address.chatId, binding.codepilotSessionId, { workingDirectory: args });
+        this.store.touchChatThread(this.channelType, message.address.chatId, binding.codepilotSessionId, { workingDirectory: args });
         await this.adapter.sendCommandReply(message.address.chatId, `Working directory set to <code>${escapeHtml(args)}</code>`, message.messageId);
         return;
       }
@@ -305,10 +314,10 @@ export class FeishuBridgeService {
       }
 
       case '/status': {
-        const summary = this.store.describeChatThread('feishu', message.address.chatId, binding.codepilotSessionId);
+        const summary = this.store.describeChatThread(this.channelType, message.address.chatId, binding.codepilotSessionId);
         const busy = this.store.getBusyLocalThreadState(binding.codepilotSessionId);
         const lines = [
-          '<b>Codex Feishu Status</b>',
+          `<b>Codex ${this.adapter.displayName} Status</b>`,
           '',
           `Session: <code>${binding.codepilotSessionId.slice(0, 8)}...</code>`,
           `CWD: <code>${escapeHtml(binding.workingDirectory || '~')}</code>`,
@@ -386,7 +395,7 @@ export class FeishuBridgeService {
   }
 
   private async showThreads(message: InboundMessage, currentSessionId: string): Promise<void> {
-    const threads = this.store.listChatThreads('feishu', message.address.chatId);
+    const threads = this.store.listChatThreads(this.channelType, message.address.chatId);
     await this.adapter.sendThreadPicker(message.address.chatId, threads, currentSessionId, message.messageId);
   }
 
@@ -401,14 +410,14 @@ export class FeishuBridgeService {
 
   private async switchThread(message: InboundMessage, identifier: string): Promise<void> {
     const currentBinding = this.resolveBinding(message.address.chatId);
-    const target = this.store.findChatThread('feishu', message.address.chatId, identifier);
+    const target = this.store.findChatThread(this.channelType, message.address.chatId, identifier);
     if (!target) {
       await this.adapter.sendText(message.address.chatId, 'Thread not found.', message.messageId);
       return;
     }
 
     const resolved = target.importable
-      ? this.store.importChatThread('feishu', message.address.chatId, target.sdkSessionId)
+      ? this.store.importChatThread(this.channelType, message.address.chatId, target.sdkSessionId)
       : target;
 
     if (!resolved) {
@@ -423,7 +432,7 @@ export class FeishuBridgeService {
       model: resolved.model,
       updatedAt: new Date().toISOString(),
     });
-    this.store.touchChatThread('feishu', message.address.chatId, resolved.sessionId, {
+    this.store.touchChatThread(this.channelType, message.address.chatId, resolved.sessionId, {
       workingDirectory: resolved.workingDirectory,
       model: resolved.model,
       title: resolved.title,
@@ -465,6 +474,15 @@ export class FeishuBridgeService {
 
     this.adapter.beginResponse(message.address.chatId, message.messageId);
     const abortController = new AbortController();
+    let inboundAbortListener: (() => void) | null = null;
+    if (message.abortSignal) {
+      inboundAbortListener = () => abortController.abort();
+      if (message.abortSignal.aborted) {
+        abortController.abort();
+      } else {
+        message.abortSignal.addEventListener('abort', inboundAbortListener, { once: true });
+      }
+    }
     this.activeTasks.set(binding.codepilotSessionId, { abortController });
     let partialText = '';
     let tools: ThreadToolState[] = [];
@@ -496,7 +514,7 @@ export class FeishuBridgeService {
           this.store.updateChannelBinding(binding.id, { sdkSessionId: '' });
         }
       }
-      this.store.touchChatThread('feishu', message.address.chatId, binding.codepilotSessionId, {
+      this.store.touchChatThread(this.channelType, message.address.chatId, binding.codepilotSessionId, {
         workingDirectory: binding.workingDirectory,
         model: binding.model,
       });
@@ -518,6 +536,9 @@ export class FeishuBridgeService {
       const status = abortController.signal.aborted ? 'interrupted' : 'error';
       await this.adapter.finalizeResponse(message.address.chatId, status, messageText, message.messageId);
     } finally {
+      if (message.abortSignal && inboundAbortListener) {
+        message.abortSignal.removeEventListener('abort', inboundAbortListener);
+      }
       this.activeTasks.delete(binding.codepilotSessionId);
     }
   }
@@ -532,6 +553,15 @@ export class FeishuBridgeService {
     this.adapter.beginResponse(message.address.chatId, message.messageId);
 
     const abortController = new AbortController();
+    let inboundAbortListener: (() => void) | null = null;
+    if (message.abortSignal) {
+      inboundAbortListener = () => abortController.abort();
+      if (message.abortSignal.aborted) {
+        abortController.abort();
+      } else {
+        message.abortSignal.addEventListener('abort', inboundAbortListener, { once: true });
+      }
+    }
     this.activeTasks.set(binding.codepilotSessionId, { abortController });
     let finalText = busyThread.previewText || '';
     let tools: ThreadToolState[] = busyThread.tools;
@@ -571,6 +601,9 @@ export class FeishuBridgeService {
         message.messageId,
       );
     } finally {
+      if (message.abortSignal && inboundAbortListener) {
+        message.abortSignal.removeEventListener('abort', inboundAbortListener);
+      }
       this.activeTasks.delete(binding.codepilotSessionId);
     }
 
@@ -582,9 +615,38 @@ export class FeishuBridgeService {
     binding: ChannelBinding,
     payload: PermissionRequestPayload,
   ): Promise<void> {
+    if (this.channelType === 'rokid' && this.config.rokidAutoAllowPermissions) {
+      const resolution: { behavior: 'allow'; updatedPermissions: unknown[] } = {
+        behavior: 'allow',
+        updatedPermissions: [{ scope: 'session' }],
+      };
+      if (!this.permissions.resolve(payload.permissionRequestId, resolution)) {
+        setTimeout(() => {
+          this.permissions.resolve(payload.permissionRequestId, resolution);
+        }, 0);
+      }
+      await this.adapter.sendPermissionRequest(
+        message.address.chatId,
+        [
+          `Auto-allowed for Rokid channel.`,
+          '',
+          `**Tool:** \`${payload.toolName}\``,
+          '',
+          '```json',
+          JSON.stringify(payload.toolInput, null, 2).slice(0, 4000),
+          '```',
+          '',
+          `Thread: \`${binding.codepilotSessionId.slice(0, 8)}...\``,
+        ].join('\n'),
+        payload.permissionRequestId,
+        message.messageId,
+      );
+      return;
+    }
+
     this.store.insertPermissionLink({
       permissionRequestId: payload.permissionRequestId,
-      channelType: 'feishu',
+      channelType: this.channelType,
       chatId: message.address.chatId,
       messageId: message.messageId,
       toolName: payload.toolName,
@@ -618,7 +680,7 @@ export class FeishuBridgeService {
   }
 
   private resolveBinding(chatId: string): ChannelBinding {
-    const existing = this.store.getChannelBinding('feishu', chatId);
+    const existing = this.store.getChannelBinding(this.channelType, chatId);
     if (existing) {
       const session = this.store.getSession(existing.codepilotSessionId);
       if (session) return existing;
@@ -630,7 +692,7 @@ export class FeishuBridgeService {
     const workingDirectory = workDir || this.config.defaultWorkDir;
     const model = this.config.defaultModel || '';
     const session = this.store.createSession(
-      `Feishu ${chatId}`,
+      `${this.adapter.displayName} ${chatId}`,
       model,
       undefined,
       workingDirectory,
@@ -641,13 +703,13 @@ export class FeishuBridgeService {
       this.store.updateSessionProviderId(session.id, defaultProviderId);
     }
     const binding = this.store.upsertChannelBinding({
-      channelType: 'feishu',
+      channelType: this.channelType,
       chatId,
       codepilotSessionId: session.id,
       workingDirectory: session.working_directory,
       model: session.model,
     });
-    this.store.touchChatThread('feishu', chatId, binding.codepilotSessionId, {
+    this.store.touchChatThread(this.channelType, chatId, binding.codepilotSessionId, {
       workingDirectory: session.working_directory,
       model: session.model,
       title: `thread · ${session.id.slice(0, 8)}`,

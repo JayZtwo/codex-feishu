@@ -11,6 +11,7 @@ It is built for real remote coding, not generic chatbot demos. The repository pa
 Most IM bridges stop at "send a message to an LLM". This one is aimed at actual coding workflows:
 
 - Feishu long-connection bridge for Codex
+- optional Rokid Lingzhu custom-agent HTTP/SSE endpoint
 - streaming updates instead of final-answer-only replies
 - inline permission approval cards in Feishu
 - thread listing, card-based switching, and busy-thread follow mode
@@ -98,6 +99,23 @@ Or from Codex:
 - Follow an already-running desktop thread without taking it over
 - Switch back to a specific thread from Feishu and continue there
 
+## Rokid Lingzhu glasses trigger
+
+You can optionally expose an HTTP/SSE endpoint for Lingzhu custom-agent import:
+
+```bash
+CODEX_FEISHU_ROKID_ENABLED=true
+CODEX_FEISHU_ROKID_HOST=127.0.0.1
+CODEX_FEISHU_ROKID_PORT=8787
+CODEX_FEISHU_ROKID_PATH=/rokid/agent
+CODEX_FEISHU_ROKID_SECRET=replace-with-a-long-random-token
+CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true
+```
+
+Point Lingzhu's third-party/custom-agent import flow at a public HTTPS URL that reverse-proxies to `http://127.0.0.1:8787/rokid/agent`. See [references/rokid-lingzhu.md](./references/rokid-lingzhu.md).
+
+Rokid-triggered turns auto-allow Codex permission requests by default because glasses are a poor approval surface. Keep the endpoint behind HTTPS, a long random secret, and an optional allowlist. Set `CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=false` if you want approval to fall back to Feishu or desktop Codex.
+
 ## Feishu setup summary
 
 The Feishu side must be done in this order:
@@ -133,7 +151,7 @@ More detail: [references/usage.md](./references/usage.md)
 
 ## Repository goals
 
-- Keep the repo focused on Codex + Feishu
+- Keep the repo focused on Codex + Feishu, with an optional Rokid Lingzhu trigger path
 - Keep secrets, runtime state, and chat history out of git
 - Make setup explicit enough that another user can get working without private context
 
@@ -142,7 +160,7 @@ More detail: [references/usage.md](./references/usage.md)
 - [SKILL.md](./SKILL.md): skill instructions for Codex
 - [src](./src): runtime source
 - [scripts](./scripts): daemon management and install helpers
-- [references](./references): Feishu onboarding and troubleshooting docs
+- [references](./references): Feishu onboarding, Rokid Lingzhu integration, and troubleshooting docs
 
 ## Privacy and safety
 

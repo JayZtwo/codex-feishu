@@ -1,6 +1,6 @@
 # Feishu Setup Guide
 
-This skill is intentionally scoped to **Codex + Feishu/Lark**.
+This skill is intentionally focused on **Codex + Feishu/Lark**, with an optional Rokid Lingzhu trigger endpoint.
 
 ## 1. Create the Feishu app
 
@@ -32,6 +32,19 @@ CODEX_FEISHU_APP_SECRET=your-secret
 # CODEX_FEISHU_DOMAIN=https://open.feishu.cn
 # CODEX_FEISHU_ALLOWED_USERS=ou_xxxxx
 ```
+
+Optional Rokid Lingzhu custom-agent endpoint:
+
+```dotenv
+CODEX_FEISHU_ROKID_ENABLED=true
+CODEX_FEISHU_ROKID_HOST=127.0.0.1
+CODEX_FEISHU_ROKID_PORT=8787
+CODEX_FEISHU_ROKID_PATH=/rokid/agent
+CODEX_FEISHU_ROKID_SECRET=replace-with-a-long-random-token
+CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true
+```
+
+Expose that endpoint through HTTPS when configuring Lingzhu. Details: [rokid-lingzhu.md](./rokid-lingzhu.md).
 
 ## 3. Add required scopes
 

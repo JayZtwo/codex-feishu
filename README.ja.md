@@ -9,6 +9,7 @@
 ## 主な機能
 
 - Codex と Feishu の長连接ブリッジ
+- Rokid Lingzhu カスタムエージェント向けの任意 HTTP/SSE エンドポイント
 - ストリーミング更新カード
 - Feishu 上での権限承認カード
 - デスクトップ側が作業中のときの busy-thread follow
@@ -70,6 +71,20 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\daemon.ps1 start
 ```text
 /codex-feishu start
 ```
+
+## Rokid Lingzhu
+
+Rokid グラスから Codex を起動したい場合は、Lingzhu のカスタムエージェント import 用に任意の HTTP/SSE endpoint を有効化できます。
+
+```bash
+CODEX_FEISHU_ROKID_ENABLED=true
+CODEX_FEISHU_ROKID_PORT=8787
+CODEX_FEISHU_ROKID_PATH=/rokid/agent
+CODEX_FEISHU_ROKID_SECRET=replace-with-a-long-random-token
+CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true
+```
+
+詳細は [references/rokid-lingzhu.md](./references/rokid-lingzhu.md) を参照してください。
 
 ## セットアップ順序
 

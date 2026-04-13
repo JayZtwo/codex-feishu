@@ -1,6 +1,6 @@
 # Usage Guide
 
-This package is focused on **Codex + Feishu**.
+This package is focused on **Codex + Feishu**, with an optional Rokid Lingzhu trigger endpoint.
 
 ## First-time setup
 
@@ -109,6 +109,20 @@ After changing config, restart:
 /codex-feishu stop
 /codex-feishu start
 ```
+
+## Rokid Lingzhu
+
+Enable the optional HTTP/SSE endpoint if you want Rokid glasses to trigger Codex through Lingzhu's custom-agent import flow:
+
+```dotenv
+CODEX_FEISHU_ROKID_ENABLED=true
+CODEX_FEISHU_ROKID_PORT=8787
+CODEX_FEISHU_ROKID_PATH=/rokid/agent
+CODEX_FEISHU_ROKID_SECRET=replace-with-a-long-random-token
+CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS=true
+```
+
+Then expose `http://127.0.0.1:8787/rokid/agent` behind HTTPS and configure that URL in Lingzhu. See [rokid-lingzhu.md](./rokid-lingzhu.md).
 
 ## Doctor
 

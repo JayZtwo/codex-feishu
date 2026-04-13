@@ -10,6 +10,13 @@ export interface Config {
   feishuAppSecret?: string;
   feishuDomain?: string;
   feishuAllowedUsers?: string[];
+  rokidEnabled: boolean;
+  rokidHost: string;
+  rokidPort: number;
+  rokidPath: string;
+  rokidSecret?: string;
+  rokidAllowedUsers?: string[];
+  rokidAutoAllowPermissions: boolean;
 }
 
 export const BRIDGE_HOME = process.env.CODEX_FEISHU_HOME || path.join(os.homedir(), '.codex-feishu');
@@ -40,6 +47,17 @@ function splitCsv(value: string | undefined): string[] | undefined {
   return value.split(',').map((entry) => entry.trim()).filter(Boolean);
 }
 
+function parseBool(value: string | undefined, fallback = false): boolean {
+  if (!value) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
+function parsePort(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed > 0 && parsed < 65536 ? parsed : fallback;
+}
+
 export function loadConfig(): Config {
   let env = new Map<string, string>();
   try {
@@ -56,6 +74,13 @@ export function loadConfig(): Config {
     feishuAppSecret: env.get('CODEX_FEISHU_APP_SECRET') || undefined,
     feishuDomain: env.get('CODEX_FEISHU_DOMAIN') || undefined,
     feishuAllowedUsers: splitCsv(env.get('CODEX_FEISHU_ALLOWED_USERS')),
+    rokidEnabled: parseBool(env.get('CODEX_FEISHU_ROKID_ENABLED')),
+    rokidHost: env.get('CODEX_FEISHU_ROKID_HOST') || '127.0.0.1',
+    rokidPort: parsePort(env.get('CODEX_FEISHU_ROKID_PORT'), 8787),
+    rokidPath: env.get('CODEX_FEISHU_ROKID_PATH') || '/rokid/agent',
+    rokidSecret: env.get('CODEX_FEISHU_ROKID_SECRET') || undefined,
+    rokidAllowedUsers: splitCsv(env.get('CODEX_FEISHU_ROKID_ALLOWED_USERS')),
+    rokidAutoAllowPermissions: parseBool(env.get('CODEX_FEISHU_ROKID_AUTO_ALLOW_PERMISSIONS'), true),
   };
 }
 

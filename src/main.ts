@@ -8,6 +8,8 @@ import { CodexProvider } from './codex-provider.js';
 import { PendingPermissions } from './permission-gateway.js';
 import { setupLogger } from './logger.js';
 import { FeishuBridgeService } from './bridge/service.js';
+import { FeishuAdapter } from './bridge/feishu.js';
+import { RokidAdapter } from './bridge/rokid.js';
 
 const RUNTIME_DIR = path.join(BRIDGE_HOME, 'runtime');
 const STATUS_FILE = path.join(RUNTIME_DIR, 'status.json');
@@ -44,19 +46,32 @@ async function main(): Promise<void> {
   const store = new JsonFileStore(settings);
   const pendingPerms = new PendingPermissions();
   const llm = new CodexProvider(pendingPerms);
-  const service = new FeishuBridgeService(config, store, pendingPerms, llm);
+  const services: FeishuBridgeService[] = [];
+  if (config.feishuAppId && config.feishuAppSecret) {
+    services.push(new FeishuBridgeService(config, store, pendingPerms, llm, new FeishuAdapter(config, store)));
+  }
+  if (config.rokidEnabled) {
+    services.push(new FeishuBridgeService(config, store, pendingPerms, llm, new RokidAdapter(config)));
+  }
+  if (services.length === 0) {
+    throw new Error('No bridge channels configured. Configure Feishu credentials or set CODEX_FEISHU_ROKID_ENABLED=true.');
+  }
   console.log('[codex-feishu] Runtime: codex');
   fs.mkdirSync(RUNTIME_DIR, { recursive: true });
   fs.writeFileSync(PID_FILE, String(process.pid), 'utf-8');
-  await service.start();
+  const channels: string[] = [];
+  for (const service of services) {
+    await service.start();
+    channels.push(service.getChannelType());
+  }
   writeStatus({
     running: true,
     pid: process.pid,
     runId,
     startedAt: new Date().toISOString(),
-    channels: ['feishu'],
+    channels,
   });
-  console.log('[codex-feishu] Bridge started (PID: ' + process.pid + ', channels: feishu)');
+  console.log(`[codex-feishu] Bridge started (PID: ${process.pid}, channels: ${channels.join(', ')})`);
 
   // Graceful shutdown
   let shuttingDown = false;
@@ -66,7 +81,7 @@ async function main(): Promise<void> {
     const reason = signal ? `signal: ${signal}` : 'shutdown requested';
     console.log(`[codex-feishu] Shutting down (${reason})...`);
     pendingPerms.denyAll();
-    await service.stop();
+    await Promise.all(services.map((service) => service.stop()));
     writeStatus({ running: false, lastExitReason: reason });
     process.exit(0);
   };
