@@ -5,6 +5,7 @@ const MARKDOWN_IMAGE_REF_RE = /!\[([^\]]*)\]\((\/[^)\s]+)\)/g;
 const MARKDOWN_LINK_REF_RE = /\[([^\]]+)\]\((\/[^)\s]+)\)/g;
 const ABSOLUTE_PATH_RE = /(^|[\s(])((?:\/Users|\/tmp|\/private\/var\/folders|\/var\/folders)\/[^\s)<>\]]+)/g;
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|tiff?|ico)$/i;
+const STREAMING_PREVIEW_MAX_CHARS = 7000;
 
 export function hasComplexMarkdown(text: string): boolean {
   return /```[\s\S]*?```/.test(text) || /\|.+\|[\r\n]+\|[-:| ]+\|/.test(text);
@@ -97,7 +98,22 @@ function compactPreview(text: string, maxChars: number): string {
   if (normalized.length <= maxChars) {
     return normalized;
   }
-  return `${normalized.slice(0, maxChars)}\n\n...[truncated ${normalized.length - maxChars} chars]`;
+
+  const buildNotice = (omittedChars: number) => `...[显示最新内容，已覆盖前文 ${omittedChars} chars]`;
+  let visibleBudget = maxChars;
+  let visible = '';
+  let notice = '';
+  for (let i = 0; i < 4; i += 1) {
+    visible = normalized.slice(-visibleBudget).trimStart();
+    notice = buildNotice(Math.max(0, normalized.length - visible.length));
+    const nextVisibleBudget = Math.max(0, maxChars - notice.length - 2);
+    if (nextVisibleBudget === visibleBudget) {
+      break;
+    }
+    visibleBudget = nextVisibleBudget;
+  }
+
+  return `${notice}\n\n${visible}`;
 }
 
 export function buildStreamingCard(text: string, tools: ToolProgress[], options?: {
@@ -109,7 +125,7 @@ export function buildStreamingCard(text: string, tools: ToolProgress[], options?
   if (options?.thinking && !text.trim()) {
     sections.push('Thinking');
   } else {
-    sections.push(compactPreview(text, 8000));
+    sections.push(compactPreview(text, STREAMING_PREVIEW_MAX_CHARS));
   }
 
   const toolSummary = summarizeTools(tools);
