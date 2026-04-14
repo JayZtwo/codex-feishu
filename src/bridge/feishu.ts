@@ -65,6 +65,8 @@ type ActiveCardState = {
   lastUpdateAt: number;
   backoffUntil: number;
   timer: ReturnType<typeof setTimeout> | null;
+  flushInProgress: boolean;
+  pendingFlush: boolean;
 };
 
 const DEDUP_MAX = 1000;
@@ -74,7 +76,8 @@ const MAX_OUTBOUND_FILE_SIZE = 30 * 1024 * 1024;
 const TYPING_EMOJI = 'Typing';
 const CARD_UPDATE_INTERVAL_MS = 1200;
 const CARD_MIN_DELTA = 80;
-const CARD_RATE_LIMIT_BACKOFF_MS = 1500;
+const CARD_RATE_LIMIT_BACKOFF_MS = 3000;
+const FEISHU_CARD_RATE_LIMIT_CODES = new Set([230020, 99991400]);
 
 const MIME_BY_TYPE: Record<string, string> = {
   image: 'image/png',
@@ -86,6 +89,15 @@ const MIME_BY_TYPE: Record<string, string> = {
 
 function normalizeCallbackText(rawText: string): string {
   return rawText.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+}
+
+function buildCardUpdateKey(text: string, tools: ToolProgress[], thinking: boolean): string {
+  return JSON.stringify({
+    thinking,
+    textLength: text.length,
+    textTail: text.slice(-160),
+    tools: tools.map((tool) => `${tool.name}:${tool.status}`).join('|'),
+  });
 }
 
 export class FeishuAdapter implements BridgeAdapter {
@@ -417,6 +429,8 @@ export class FeishuAdapter implements BridgeAdapter {
           lastUpdateAt: 0,
           backoffUntil: 0,
           timer: null,
+          flushInProgress: false,
+          pendingFlush: false,
         });
         return true;
       } finally {
@@ -432,16 +446,16 @@ export class FeishuAdapter implements BridgeAdapter {
     const state = this.activeCards.get(chatId);
     if (!state) return;
 
-    const key = JSON.stringify({
-      thinking: state.thinking,
-      textLength: state.text.length,
-      textTail: state.text.slice(-160),
-      tools: state.tools.map((tool) => `${tool.name}:${tool.status}`).join('|'),
-    });
+    const key = buildCardUpdateKey(state.text, state.tools, state.thinking);
     const delta = Math.max(0, state.text.length - state.lastSentTextLength);
     const elapsed = Date.now() - state.lastUpdateAt;
 
     if (key === state.lastSentKey) return;
+
+    if (state.flushInProgress) {
+      state.pendingFlush = true;
+      return;
+    }
 
     if (state.lastUpdateAt > 0 && delta < CARD_MIN_DELTA && !state.tools.some((tool) => tool.status === 'running')) {
       if (!state.timer) {
@@ -485,30 +499,42 @@ export class FeishuAdapter implements BridgeAdapter {
       return;
     }
 
-    const key = JSON.stringify({
-      thinking: state.thinking,
-      textLength: state.text.length,
-      textTail: state.text.slice(-160),
-      tools: state.tools.map((tool) => `${tool.name}:${tool.status}`).join('|'),
-    });
+    if (state.flushInProgress) {
+      state.pendingFlush = true;
+      return;
+    }
+
+    const text = state.text;
+    const tools = state.tools;
+    const thinking = state.thinking;
+    const key = buildCardUpdateKey(text, tools, thinking);
     if (key === state.lastSentKey) return;
 
+    state.flushInProgress = true;
     try {
       await this.restClient.im.message.patch({
         path: { message_id: state.messageId },
-        data: { content: buildStreamingCard(state.text, state.tools, { thinking: state.thinking }) },
+        data: { content: buildStreamingCard(text, tools, { thinking }) },
       });
       state.lastSentKey = key;
-      state.lastSentTextLength = state.text.length;
+      state.lastSentTextLength = text.length;
       state.lastUpdateAt = now;
       state.backoffUntil = 0;
     } catch (error) {
-      const code = (error as { code?: number; response?: { data?: { code?: number } } })?.code
-        ?? (error as { response?: { data?: { code?: number } } })?.response?.data?.code;
-      if (code === 99991400) {
+      const rawCode = (error as { code?: number | string; response?: { data?: { code?: number | string } } })?.code
+        ?? (error as { response?: { data?: { code?: number | string } } })?.response?.data?.code;
+      const code = typeof rawCode === 'string' ? Number(rawCode) : rawCode;
+      if (typeof code === 'number' && FEISHU_CARD_RATE_LIMIT_CODES.has(code)) {
         state.backoffUntil = Date.now() + CARD_RATE_LIMIT_BACKOFF_MS;
+        state.pendingFlush = true;
       }
       console.warn('[feishu] card update failed:', error instanceof Error ? error.message : error);
+    } finally {
+      state.flushInProgress = false;
+      if (state.pendingFlush && this.activeCards.get(chatId) === state) {
+        state.pendingFlush = false;
+        this.scheduleCardUpdate(chatId);
+      }
     }
   }
 
