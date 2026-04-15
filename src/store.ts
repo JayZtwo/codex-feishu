@@ -28,6 +28,7 @@ const DATA_DIR = path.join(BRIDGE_HOME, 'data');
 const MESSAGES_DIR = path.join(DATA_DIR, 'messages');
 const CODEX_HOME = process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
 const CODEX_SESSIONS_DIR = path.join(CODEX_HOME, 'sessions');
+const CODEX_SESSION_INDEX_PATH = path.join(CODEX_HOME, 'session_index.jsonl');
 const MAX_STORED_MESSAGE_CHARS = 160_000;
 const LOCAL_THREAD_ANALYSIS_TAIL_BYTES = 2 * 1024 * 1024;
 const LOCAL_THREAD_BUSY_STALE_MS = 30 * 60 * 1000;
@@ -649,7 +650,33 @@ export class JsonFileStore implements BridgeStore {
     return files.sort((a, b) => b.localeCompare(a));
   }
 
-  private parseLocalCodexThread(filePath: string): LocalCodexThread | null {
+  private loadLocalThreadTitleIndex(): Map<string, string> {
+    const titles = new Map<string, string>();
+    let raw = '';
+    try {
+      raw = fs.readFileSync(CODEX_SESSION_INDEX_PATH, 'utf-8');
+    } catch {
+      return titles;
+    }
+
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const parsed = JSON.parse(line) as { id?: string; thread_name?: string };
+        const sessionId = parsed.id?.trim();
+        const title = parsed.thread_name ? normalizeWhitespace(parsed.thread_name) : '';
+        if (sessionId && title) {
+          titles.set(sessionId, title);
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return titles;
+  }
+
+  private parseLocalCodexThread(filePath: string, titleIndex?: Map<string, string>): LocalCodexThread | null {
     let raw = '';
     try {
       raw = fs.readFileSync(filePath, 'utf-8');
@@ -751,7 +778,7 @@ export class JsonFileStore implements BridgeStore {
     return {
       sdkSessionId,
       filePath,
-      title: this.defaultThreadTitle(sdkSessionId, workingDirectory),
+      title: titleIndex?.get(sdkSessionId) || this.defaultThreadTitle(sdkSessionId, workingDirectory),
       workingDirectory,
       model,
       latestMessagePreview,
@@ -770,8 +797,9 @@ export class JsonFileStore implements BridgeStore {
     }
 
     const entries = new Map<string, LocalCodexThread>();
+    const titleIndex = this.loadLocalThreadTitleIndex();
     for (const filePath of this.listRolloutFiles(CODEX_SESSIONS_DIR)) {
-      const thread = this.parseLocalCodexThread(filePath);
+      const thread = this.parseLocalCodexThread(filePath, titleIndex);
       if (!thread) continue;
       if (entries.has(thread.sdkSessionId)) continue;
       entries.set(thread.sdkSessionId, thread);
@@ -815,7 +843,7 @@ export class JsonFileStore implements BridgeStore {
   }
 
   private getDesktopPrioritySdkSessionId(record: ThreadRecord): string {
-    return record.importedSdkSessionId || this.getSessionSdkSessionId(record.sessionId) || '';
+    return this.getSessionSdkSessionId(record.sessionId) || record.importedSdkSessionId || '';
   }
 
   private buildManagedThreadSummary(record: ThreadRecord): ThreadSummary {
@@ -823,6 +851,7 @@ export class JsonFileStore implements BridgeStore {
     const sourceSdkSessionId = this.getThreadSourceSdkSessionId(record);
     const fallback = sourceSdkSessionId ? this.getLocalCodexThreads().get(sourceSdkSessionId) || null : null;
     const effectiveLastActiveAt = fallback?.lastActiveAt || record.lastActiveAt;
+    const effectiveTitle = fallback?.title || record.title;
     const messages = this.loadMessages(record.sessionId);
     let latestMessagePreview = '';
     let latestMessageRole = '';
@@ -848,6 +877,7 @@ export class JsonFileStore implements BridgeStore {
     }
     return {
       ...record,
+      title: effectiveTitle,
       lastActiveAt: effectiveLastActiveAt,
       latestMessagePreview,
       latestMessageRole,
@@ -1415,6 +1445,9 @@ export class JsonFileStore implements BridgeStore {
     if (exact) return exact;
 
     const lower = normalized.toLowerCase();
+    const exactTitle = threads.find((thread) => normalizeWhitespace(thread.title).toLowerCase() === lower);
+    if (exactTitle) return exactTitle;
+
     const matches = threads.filter((thread) =>
       (thread.sessionId && thread.sessionId.toLowerCase().startsWith(lower))
       || (thread.sdkSessionId && thread.sdkSessionId.toLowerCase().startsWith(lower))
@@ -1480,14 +1513,20 @@ export class JsonFileStore implements BridgeStore {
   }
 
   getThreadLatestDialogue(sessionId: string): ThreadDialogue | null {
+    const record = this.findThreadRecordBySessionId(sessionId);
+    const sdkSessionId = record ? this.getDesktopPrioritySdkSessionId(record) : this.getSessionSdkSessionId(sessionId);
+    if (sdkSessionId) {
+      const local = this.findLatestLocalDialogue(sdkSessionId);
+      if (local?.assistantText || local?.userText) {
+        return local;
+      }
+    }
+
     const managed = this.findLatestManagedDialogue(sessionId);
     if (managed?.assistantText || managed?.userText) {
       return managed;
     }
-
-    const sdkSessionId = this.getSessionSdkSessionId(sessionId);
-    if (!sdkSessionId) return null;
-    return this.findLatestLocalDialogue(sdkSessionId);
+    return null;
   }
 
   getBusyLocalThreadState(sessionId: string): {
