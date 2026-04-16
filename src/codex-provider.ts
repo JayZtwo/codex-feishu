@@ -1117,14 +1117,11 @@ export class CodexProvider implements LLMProvider {
               provider.threadIds.set(params.sessionId, summary.sessionId);
             }
 
-            if (summary.finalAnswer) {
-              provider.emitMissingFinalText(controller, summary.finalAnswer, params.sessionId);
-            }
-
             if (!params.abortController?.signal.aborted) {
               controller.enqueue(sseEvent('result', {
                 ...(summary.usage ? { usage: summary.usage } : {}),
                 ...(summary.sessionId ? { session_id: summary.sessionId } : {}),
+                ...(summary.finalAnswer ? { final_text: summary.finalAnswer } : {}),
               }));
             }
             controller.close();
@@ -1144,23 +1141,6 @@ export class CodexProvider implements LLMProvider {
         })();
       },
     });
-  }
-
-  private emitMissingFinalText(
-    controller: ReadableStreamDefaultController<string>,
-    finalAnswer: string,
-    bridgeSessionId: string,
-  ): void {
-    const streamed = this.streamedTextBySession.get(bridgeSessionId) || '';
-    if (!finalAnswer || !finalAnswer.startsWith(streamed)) {
-      return;
-    }
-
-    const suffix = finalAnswer.slice(streamed.length);
-    if (suffix) {
-      controller.enqueue(sseEvent('text', suffix));
-      this.streamedTextBySession.set(bridgeSessionId, finalAnswer);
-    }
   }
 
   private async getAppServer(): Promise<CodexAppServerClient> {
@@ -1504,6 +1484,7 @@ export class CodexProvider implements LLMProvider {
       const phase = state.itemPhases.get(itemId);
       if (phase === 'final_answer') {
         state.finalAnswer = `${state.finalAnswer || ''}${delta}`;
+        return;
       }
     }
 
@@ -1674,9 +1655,6 @@ export class CodexProvider implements LLMProvider {
         return;
       }
       completionRequested = true;
-      if (finalAnswer) {
-        this.emitMissingFinalText(controller, finalAnswer, params.sessionId);
-      }
       this.requestChildCompletion(child);
     };
     const emitRolloutText = (text: string) => {
@@ -1731,14 +1709,6 @@ export class CodexProvider implements LLMProvider {
     const concurrentTurnError = rollout.concurrentTurnDetected
       ? `Imported Codex thread became active elsewhere while IM was waiting${rollout.concurrentTurnMessage ? `: ${truncateInline(rollout.concurrentTurnMessage, 120)}` : ''}. The IM thread will detach from that shared session on the next message.`
       : '';
-
-    if (!rollout.usedRolloutText && !aborted && rollout.finalAnswer && rollout.finalAnswer.startsWith(streamedText)) {
-      const suffix = rollout.finalAnswer.slice(streamedText.length);
-      if (suffix) {
-        controller.enqueue(sseEvent('text', suffix));
-        this.rememberStreamedText(params.sessionId, rollout.finalAnswer);
-      }
-    }
 
     params.abortController?.signal.removeEventListener('abort', onAbort);
 
@@ -1936,8 +1906,6 @@ export class CodexProvider implements LLMProvider {
                   break;
                 }
                 finalAnswer = event.text;
-                usedRolloutText = true;
-                options.onRolloutText?.(event.text);
                 break;
 
               case 'task_complete':

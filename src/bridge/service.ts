@@ -29,6 +29,104 @@ function normalizeText(value: string): string {
   return value.normalize('NFKC').replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 }
 
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function truncateInlineValue(value: string, maxChars = 120): string {
+  const normalized = collapseWhitespace(value);
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxChars - 1))}…`;
+}
+
+function inlineCode(value: string): string {
+  return `\`${value.replace(/`/g, "'")}\``;
+}
+
+function summarizePermissionScopes(value: unknown): string {
+  if (!value || typeof value !== 'object') {
+    return '';
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, entryValue]) => {
+      if (Array.isArray(entryValue)) {
+        return entryValue.length > 0;
+      }
+      return Boolean(entryValue);
+    })
+    .map(([key, entryValue]) => {
+      if (Array.isArray(entryValue)) {
+        return `${key}(${entryValue.length})`;
+      }
+      return key;
+    });
+
+  if (entries.length === 0) {
+    return '';
+  }
+
+  const preview = entries.slice(0, 3).join(', ');
+  return entries.length > 3 ? `${preview} +${entries.length - 3}` : preview;
+}
+
+function renderPermissionRequestBody(
+  binding: ChannelBinding,
+  payload: PermissionRequestPayload,
+  options?: { autoAllowed?: boolean },
+): string {
+  const lines: string[] = [];
+  if (options?.autoAllowed) {
+    lines.push('Rokid 通道已自动允许。');
+  }
+
+  lines.push(`**工具：** ${inlineCode(payload.toolName)}`);
+
+  const reason = typeof payload.toolInput.reason === 'string'
+    ? truncateInlineValue(payload.toolInput.reason, 100)
+    : '';
+  if (reason) {
+    lines.push(`**说明：** ${reason}`);
+  }
+
+  if (payload.toolName === 'Bash') {
+    const command = typeof payload.toolInput.command === 'string'
+      ? truncateInlineValue(payload.toolInput.command, 100)
+      : '';
+    const cwd = typeof payload.toolInput.cwd === 'string'
+      ? truncateInlineValue(payload.toolInput.cwd, 72)
+      : '';
+    if (command) {
+      lines.push(`**命令：** ${inlineCode(command)}`);
+    }
+    if (cwd) {
+      lines.push(`**目录：** ${inlineCode(cwd)}`);
+    }
+  } else if (payload.toolName === 'Edit') {
+    const grantRoot = typeof payload.toolInput.grantRoot === 'string'
+      ? truncateInlineValue(payload.toolInput.grantRoot, 72)
+      : '';
+    if (grantRoot) {
+      lines.push(`**范围：** ${inlineCode(grantRoot)}`);
+    }
+  } else if (payload.toolName === 'Permissions') {
+    const scopes = summarizePermissionScopes(payload.toolInput.permissions);
+    if (scopes) {
+      lines.push(`**权限：** ${scopes}`);
+    }
+  } else {
+    const detail = truncateInlineValue(JSON.stringify(payload.toolInput), 100);
+    if (detail) {
+      lines.push(`**详情：** ${inlineCode(detail)}`);
+    }
+  }
+
+  lines.push(`**线程：** ${inlineCode(`${binding.codepilotSessionId.slice(0, 8)}...`)}`);
+  return lines.join('\n');
+}
+
 function truncateInput(text: string): string {
   if (text.length <= MAX_INPUT_LENGTH) {
     return text;
@@ -48,6 +146,14 @@ function looksLikePermissionShortcut(rawText: string): boolean {
   return /^[123]$/.test(normalizeText(rawText));
 }
 
+function cleanThreadSwitchTarget(value: string): string {
+  return value
+    .trim()
+    .replace(/^[「『“"']+/, '')
+    .replace(/[」』”"']+$/, '')
+    .trim();
+}
+
 function mapThreadShortcut(rawText: string): string | null {
   const normalized = normalizeText(rawText);
   const listAliases = new Set([
@@ -64,9 +170,16 @@ function mapThreadShortcut(rawText: string): string | null {
   const switchPrefixes = ['切换线程', '切到线程', '切线程', '切换到线程'];
   for (const prefix of switchPrefixes) {
     if (!normalized.startsWith(prefix)) continue;
-    const target = normalized.slice(prefix.length).trim();
+    const target = cleanThreadSwitchTarget(normalized.slice(prefix.length));
     return target ? `/thread switch ${target}` : '/threads';
   }
+
+  const naturalSwitch = normalized.match(/^切换到(.+)线程$/u);
+  if (naturalSwitch?.[1]) {
+    const target = cleanThreadSwitchTarget(naturalSwitch[1]);
+    return target ? `/thread switch ${target}` : '/threads';
+  }
+
   return null;
 }
 
@@ -563,22 +676,27 @@ export class FeishuBridgeService {
       }
     }
     this.activeTasks.set(binding.codepilotSessionId, { abortController });
-    let finalText = busyThread.previewText || '';
+    let streamedText = busyThread.previewText || '';
+    let finalText = busyThread.finalText || streamedText;
     let tools: ThreadToolState[] = busyThread.tools;
-    this.adapter.updateResponse(message.address.chatId, finalText, tools);
+    this.adapter.updateResponse(message.address.chatId, streamedText, tools);
 
     try {
       const result = await this.store.followBusyLocalThread(binding.codepilotSessionId, {
         abortSignal: abortController.signal,
         onText: (fullText) => {
-          finalText = fullText;
-          this.adapter.updateResponse(message.address.chatId, finalText, tools);
+          streamedText = fullText;
+          this.adapter.updateResponse(message.address.chatId, streamedText, tools);
         },
         onTools: (nextTools) => {
           tools = nextTools;
-          this.adapter.updateResponse(message.address.chatId, finalText, tools);
+          this.adapter.updateResponse(message.address.chatId, streamedText, tools);
         },
       });
+
+      if (result.finalText) {
+        finalText = result.finalText;
+      }
 
       if (result.completed) {
         const synced = this.store.syncImportedThreadFromLocalSource(binding.codepilotSessionId);
@@ -590,14 +708,14 @@ export class FeishuBridgeService {
       await this.adapter.finalizeResponse(
         message.address.chatId,
         result.completed ? 'completed' : 'interrupted',
-        finalText,
+        finalText || streamedText,
         message.messageId,
       );
     } catch (error) {
       await this.adapter.finalizeResponse(
         message.address.chatId,
         abortController.signal.aborted ? 'interrupted' : 'error',
-        finalText || (error instanceof Error ? error.message : String(error)),
+        finalText || streamedText || (error instanceof Error ? error.message : String(error)),
         message.messageId,
       );
     } finally {
@@ -625,19 +743,10 @@ export class FeishuBridgeService {
           this.permissions.resolve(payload.permissionRequestId, resolution);
         }, 0);
       }
+      const body = renderPermissionRequestBody(binding, payload, { autoAllowed: true });
       await this.adapter.sendPermissionRequest(
         message.address.chatId,
-        [
-          `Auto-allowed for Rokid channel.`,
-          '',
-          `**Tool:** \`${payload.toolName}\``,
-          '',
-          '```json',
-          JSON.stringify(payload.toolInput, null, 2).slice(0, 4000),
-          '```',
-          '',
-          `Thread: \`${binding.codepilotSessionId.slice(0, 8)}...\``,
-        ].join('\n'),
+        body,
         payload.permissionRequestId,
         message.messageId,
       );
@@ -653,15 +762,7 @@ export class FeishuBridgeService {
       suggestions: JSON.stringify(payload.suggestions || []),
     });
 
-    const body = [
-      `**Tool:** \`${payload.toolName}\``,
-      '',
-      '```json',
-      JSON.stringify(payload.toolInput, null, 2).slice(0, 4000),
-      '```',
-      '',
-      `Thread: \`${binding.codepilotSessionId.slice(0, 8)}...\``,
-    ].join('\n');
+    const body = renderPermissionRequestBody(binding, payload);
 
     await this.adapter.sendPermissionRequest(
       message.address.chatId,

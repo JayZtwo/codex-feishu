@@ -145,7 +145,7 @@ export function buildStreamingCard(text: string, tools: ToolProgress[], options?
 
 export function buildPermissionCard(body: string, permissionId: string): string {
   return JSON.stringify({
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: false },
     header: {
       template: 'orange',
       title: { tag: 'plain_text', content: 'Permission Required' },
@@ -177,10 +177,6 @@ export function buildPermissionCard(body: string, permissionId: string): string 
             value: { callback_data: `perm:deny:${permissionId}` },
           },
         ],
-      },
-      {
-        tag: 'div',
-        text: { tag: 'lark_md', content: 'Reply: `1` Allow · `2` Allow Session · `3` Deny' },
       },
     ],
   });
@@ -228,8 +224,11 @@ export function buildThreadPickerCard(threads: ThreadSummary[], currentSessionId
   }
 
   for (const [index, thread] of threads.slice(0, 8).entries()) {
-    const summary = thread.latestUserPreview || thread.latestMessagePreview || thread.title;
+    const preview = thread.latestUserPreview || thread.latestMessagePreview || '';
+    const title = thread.title || `${thread.displayId.slice(0, 8)}...`;
+    const previewLine = preview && preview !== title ? `\n${preview}` : '';
     const meta = [
+      `ID ${thread.displayId.slice(0, 8)}...`,
       thread.workingDirectory || '~',
       thread.lastActiveLabel,
       thread.source === 'local' ? 'local' : 'managed',
@@ -241,7 +240,7 @@ export function buildThreadPickerCard(threads: ThreadSummary[], currentSessionId
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**${index + 1}. ${thread.displayId.slice(0, 8)}...**\n${summary}\n${meta}`,
+          content: `**${index + 1}. ${title}**${previewLine}\n${meta}`,
         },
       },
       {
@@ -281,7 +280,9 @@ export function renderThreadListText(threads: ThreadSummary[], currentSessionId:
   const lines = ['Threads', ''];
   for (const [index, thread] of threads.entries()) {
     const current = thread.sessionId === currentSessionId ? ' [current]' : '';
-    lines.push(`${index + 1}. ${thread.displayId.slice(0, 8)}...${current}`);
+    const title = thread.title || `${thread.displayId.slice(0, 8)}...`;
+    lines.push(`${index + 1}. ${title}${current}`);
+    lines.push(`ID: ${thread.displayId.slice(0, 8)}...`);
     if (thread.latestUserPreview) {
       lines.push(`最近对话: ${thread.latestUserPreview}`);
     }

@@ -30,12 +30,13 @@ const MAX_TOOL_RESULT_CHARS = 12_000;
 
 export type CodexRolloutEvent =
   | { kind: 'session'; sessionId: string }
-  | { kind: 'tool_use'; id: string; name: string; input: unknown }
-  | { kind: 'tool_result'; id: string; content: string; isError: boolean }
+  | { kind: 'tool_use'; id: string; name: string; input: unknown; requiresApproval?: boolean }
+  | { kind: 'tool_result'; id: string; content: string; isError: boolean; interrupted?: boolean }
   | { kind: 'usage'; usage: TokenUsage }
   | { kind: 'commentary'; text: string }
   | { kind: 'final_answer'; text: string }
-  | { kind: 'task_complete'; lastAgentMessage?: string };
+  | { kind: 'task_complete'; lastAgentMessage?: string }
+  | { kind: 'turn_aborted'; reason?: string };
 
 export function stripTerminalControl(text: string): string {
   return text
@@ -108,6 +109,19 @@ function parseMaybeJson(value: string | undefined): unknown {
   } catch {
     return value;
   }
+}
+
+function looksLikeInterruptedToolOutput(output: string): boolean {
+  const normalized = stripTerminalControl(output).toLowerCase();
+  return normalized.includes('aborted by user after')
+    || normalized.includes('turn interrupted');
+}
+
+function toolUseRequiresApproval(input: unknown): boolean {
+  if (!input || typeof input !== 'object') {
+    return false;
+  }
+  return (input as Record<string, unknown>).sandbox_permissions === 'require_escalated';
 }
 
 function truncateText(value: string, maxChars: number): string {
@@ -297,14 +311,16 @@ export function parseCodexRolloutRecord(record: string): CodexRolloutEvent[] {
         if (typeof toolId !== 'string' || typeof toolName !== 'string') {
           return [];
         }
+        const input = limitToolPayload(
+          parseMaybeJson(typeof payload.arguments === 'string' ? payload.arguments : undefined),
+          MAX_TOOL_INPUT_CHARS,
+        );
         return [{
           kind: 'tool_use',
           id: toolId,
           name: normalizeToolName(toolName),
-          input: limitToolPayload(
-            parseMaybeJson(typeof payload.arguments === 'string' ? payload.arguments : undefined),
-            MAX_TOOL_INPUT_CHARS,
-          ),
+          input,
+          requiresApproval: toolUseRequiresApproval(input),
         }];
       }
 
@@ -316,11 +332,13 @@ export function parseCodexRolloutRecord(record: string): CodexRolloutEvent[] {
         const output = typeof payload.output === 'string' && payload.output
           ? truncateText(payload.output, MAX_TOOL_RESULT_CHARS)
           : 'Done';
+        const interrupted = looksLikeInterruptedToolOutput(output);
         return [{
           kind: 'tool_result',
           id: toolId,
           content: output,
-          isError: false,
+          isError: interrupted,
+          interrupted,
         }];
       }
 
@@ -353,6 +371,12 @@ export function parseCodexRolloutRecord(record: string): CodexRolloutEvent[] {
       }
 
       const finalText = eventType === 'agent_message' ? extractFinalAnswerText(payload) : undefined;
+      if (eventType === 'turn_aborted') {
+        const reason = typeof payload.reason === 'string' && payload.reason.trim()
+          ? payload.reason
+          : undefined;
+        return [{ kind: 'turn_aborted', reason }];
+      }
       if (eventType === 'task_complete') {
         const lastAgentMessage = typeof payload.last_agent_message === 'string' && payload.last_agent_message.trim()
           ? payload.last_agent_message

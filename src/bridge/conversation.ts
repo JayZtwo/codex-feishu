@@ -186,6 +186,7 @@ async function consumeStream(
   const reader = stream.getReader();
   const tools = new Map<string, ToolProgress>();
   let currentText = '';
+  let finalText = '';
   let tokenUsage: TokenUsage | null = null;
   let hasError = false;
   let errorMessage = '';
@@ -267,6 +268,9 @@ async function consumeStream(
             if (payload.usage && typeof payload.usage === 'object') {
               tokenUsage = payload.usage as TokenUsage;
             }
+            if (typeof payload.final_text === 'string') {
+              finalText = payload.final_text;
+            }
             break;
           }
 
@@ -284,15 +288,15 @@ async function consumeStream(
     reader.releaseLock();
   }
 
-  const finalText = currentText.trim();
-  if (finalText) {
-    store.addMessage(sessionId, 'assistant', finalText, tokenUsage ? JSON.stringify(tokenUsage) : null);
+  const responseText = (finalText || currentText).trim();
+  if (responseText) {
+    store.addMessage(sessionId, 'assistant', responseText, tokenUsage ? JSON.stringify(tokenUsage) : null);
   } else if (hasError && errorMessage) {
     store.addMessage(sessionId, 'assistant', errorMessage);
   }
 
   return {
-    responseText: hasError && !finalText ? '' : finalText,
+    responseText: hasError && !responseText ? '' : responseText,
     tokenUsage,
     hasError,
     errorMessage,

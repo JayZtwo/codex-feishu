@@ -33,6 +33,7 @@ const MAX_STORED_MESSAGE_CHARS = 160_000;
 const LOCAL_THREAD_ANALYSIS_TAIL_BYTES = 2 * 1024 * 1024;
 const LOCAL_THREAD_BUSY_STALE_MS = 30 * 60 * 1000;
 const LOCAL_THREAD_FOLLOW_INTERVAL_MS = 250;
+const LOCAL_THREAD_WAITING_APPROVAL_IDLE_MS = 60 * 1000;
 
 // ── Helpers ──
 
@@ -426,6 +427,7 @@ export interface ThreadToolState {
   id: string;
   name: string;
   status: 'running' | 'complete' | 'error';
+  requiresApproval?: boolean;
 }
 
 interface BusyLocalThreadState {
@@ -436,6 +438,7 @@ interface BusyLocalThreadState {
   turnStartedAtMs: number;
   lastActivityAt: string;
   previewText: string;
+  finalText: string;
   lastRolloutText: string;
   tools: ThreadToolState[];
 }
@@ -850,8 +853,9 @@ export class JsonFileStore implements BridgeStore {
     const sdkSessionId = this.getSessionSdkSessionId(record.sessionId);
     const sourceSdkSessionId = this.getThreadSourceSdkSessionId(record);
     const fallback = sourceSdkSessionId ? this.getLocalCodexThreads().get(sourceSdkSessionId) || null : null;
+    const indexedTitle = sourceSdkSessionId ? this.loadLocalThreadTitleIndex().get(sourceSdkSessionId) || '' : '';
     const effectiveLastActiveAt = fallback?.lastActiveAt || record.lastActiveAt;
-    const effectiveTitle = fallback?.title || record.title;
+    const effectiveTitle = fallback?.title || indexedTitle || record.title;
     const messages = this.loadMessages(record.sessionId);
     let latestMessagePreview = '';
     let latestMessageRole = '';
@@ -1023,10 +1027,16 @@ export class JsonFileStore implements BridgeStore {
     let lastUserTimestampMs = 0;
     let lastUserTimestamp = '';
     let lastTaskCompleteMs = 0;
+    let lastTurnAbortedMs = 0;
     let lastActivityMs = 0;
     let lastActivityAt = '';
     let previewText = '';
+    let finalText = '';
     let lastRolloutText = '';
+    let eventOrder = 0;
+    let lastMeaningfulEventOrder = 0;
+    let lastTaskCompleteOrder = 0;
+    let lastTurnAbortedOrder = 0;
     const tools = new Map<string, ThreadToolState>();
 
     for (const line of lines) {
@@ -1042,8 +1052,14 @@ export class JsonFileStore implements BridgeStore {
         lastUserTimestampMs = timestampMs;
         lastUserTimestamp = new Date(timestampMs).toISOString();
         lastTaskCompleteMs = 0;
+        lastTurnAbortedMs = 0;
         previewText = '';
+        finalText = '';
         lastRolloutText = '';
+        eventOrder = 0;
+        lastMeaningfulEventOrder = 0;
+        lastTaskCompleteOrder = 0;
+        lastTurnAbortedOrder = 0;
         tools.clear();
       }
 
@@ -1061,12 +1077,17 @@ export class JsonFileStore implements BridgeStore {
         continue;
       }
       for (const event of events) {
+        if (event.kind !== 'usage') {
+          eventOrder += 1;
+          lastMeaningfulEventOrder = eventOrder;
+        }
         switch (event.kind) {
           case 'tool_use':
             tools.set(event.id, {
               id: event.id,
               name: event.name,
               status: 'running',
+              requiresApproval: event.requiresApproval,
             });
             break;
 
@@ -1076,7 +1097,12 @@ export class JsonFileStore implements BridgeStore {
               id: event.id,
               name: existing?.name || 'Tool',
               status: event.isError ? 'error' : 'complete',
+              requiresApproval: existing?.requiresApproval,
             });
+            if (event.interrupted) {
+              lastTurnAbortedMs = timestampMs || Date.now();
+              lastTurnAbortedOrder = eventOrder;
+            }
             break;
           }
 
@@ -1089,22 +1115,20 @@ export class JsonFileStore implements BridgeStore {
             break;
 
           case 'final_answer':
-            ({ currentText: previewText, lastRolloutText } = appendRolloutPreviewText(
-              previewText,
-              lastRolloutText,
-              event.text,
-            ));
+            finalText = event.text;
             break;
 
           case 'task_complete':
             lastTaskCompleteMs = timestampMs || Date.now();
+            lastTaskCompleteOrder = eventOrder;
             if (event.lastAgentMessage) {
-              ({ currentText: previewText, lastRolloutText } = appendRolloutPreviewText(
-                previewText,
-                lastRolloutText,
-                event.lastAgentMessage,
-              ));
+              finalText = event.lastAgentMessage;
             }
+            break;
+
+          case 'turn_aborted':
+            lastTurnAbortedMs = timestampMs || Date.now();
+            lastTurnAbortedOrder = eventOrder;
             break;
 
           default:
@@ -1116,10 +1140,26 @@ export class JsonFileStore implements BridgeStore {
     if (!lastUserPrompt || !lastUserTimestampMs) {
       return null;
     }
-    if (lastTaskCompleteMs >= lastUserTimestampMs) {
+    if (
+      lastTaskCompleteMs >= lastUserTimestampMs
+      && lastTaskCompleteOrder === lastMeaningfulEventOrder
+    ) {
+      return null;
+    }
+    if (
+      lastTurnAbortedMs >= lastUserTimestampMs
+      && lastTurnAbortedOrder > lastTaskCompleteOrder
+      && lastTurnAbortedOrder === lastMeaningfulEventOrder
+    ) {
       return null;
     }
     const effectiveLastActivityMs = lastActivityMs || lastUserTimestampMs;
+    const runningTools = Array.from(tools.values()).filter((tool) => tool.status === 'running');
+    const waitingApprovalOnly = runningTools.length > 0
+      && runningTools.every((tool) => tool.requiresApproval);
+    if (waitingApprovalOnly && Date.now() - effectiveLastActivityMs > LOCAL_THREAD_WAITING_APPROVAL_IDLE_MS) {
+      return null;
+    }
     if (Date.now() - effectiveLastActivityMs > LOCAL_THREAD_BUSY_STALE_MS) {
       return null;
     }
@@ -1132,6 +1172,7 @@ export class JsonFileStore implements BridgeStore {
       turnStartedAtMs: lastUserTimestampMs,
       lastActivityAt: lastActivityAt || lastUserTimestamp,
       previewText,
+      finalText,
       lastRolloutText,
       tools: Array.from(tools.values()),
     };
@@ -1448,6 +1489,11 @@ export class JsonFileStore implements BridgeStore {
     const exactTitle = threads.find((thread) => normalizeWhitespace(thread.title).toLowerCase() === lower);
     if (exactTitle) return exactTitle;
 
+    const titleMatches = threads.filter((thread) =>
+      normalizeWhitespace(thread.title).toLowerCase().includes(lower),
+    );
+    if (titleMatches.length === 1) return titleMatches[0];
+
     const matches = threads.filter((thread) =>
       (thread.sessionId && thread.sessionId.toLowerCase().startsWith(lower))
       || (thread.sdkSessionId && thread.sdkSessionId.toLowerCase().startsWith(lower))
@@ -1535,6 +1581,7 @@ export class JsonFileStore implements BridgeStore {
     turnStartedAt: string;
     lastActivityAt: string;
     previewText: string;
+    finalText: string;
     tools: ThreadToolState[];
   } | null {
     const record = this.findThreadRecordBySessionId(sessionId);
@@ -1547,6 +1594,7 @@ export class JsonFileStore implements BridgeStore {
       turnStartedAt: state.turnStartedAt,
       lastActivityAt: state.lastActivityAt,
       previewText: state.previewText,
+      finalText: state.finalText,
       tools: state.tools.map((tool) => ({ ...tool })),
     };
   }
@@ -1569,8 +1617,10 @@ export class JsonFileStore implements BridgeStore {
     }
 
     let currentText = state.previewText;
+    let finalText = state.finalText || '';
     let lastRolloutText = state.lastRolloutText;
     let completed = false;
+    let interrupted = false;
     const tools = new Map(state.tools.map((tool) => [tool.id, { ...tool }]));
     options?.onText?.(currentText);
     if (tools.size > 0) {
@@ -1581,7 +1631,7 @@ export class JsonFileStore implements BridgeStore {
     try {
       startPosition = fs.statSync(state.filePath).size;
     } catch {
-      return { busy: true, completed: false, finalText: currentText };
+      return { busy: true, completed: false, finalText: finalText || currentText };
     }
 
     const tailer = new JsonlTailReader(state.filePath, startPosition);
@@ -1633,6 +1683,7 @@ export class JsonFileStore implements BridgeStore {
                 id: event.id,
                 name: event.name,
                 status: 'running',
+                requiresApproval: event.requiresApproval,
               });
               options?.onTools?.(Array.from(tools.values()));
               break;
@@ -1643,6 +1694,7 @@ export class JsonFileStore implements BridgeStore {
                 id: event.id,
                 name: existing?.name || 'Tool',
                 status: event.isError ? 'error' : 'complete',
+                requiresApproval: existing?.requiresApproval,
               });
               options?.onTools?.(Array.from(tools.values()));
               break;
@@ -1662,30 +1714,18 @@ export class JsonFileStore implements BridgeStore {
               break;
 
             case 'final_answer':
-              {
-                const next = appendRolloutPreviewText(currentText, lastRolloutText, event.text);
-                if (next.currentText !== currentText) {
-                  currentText = next.currentText;
-                  lastRolloutText = next.lastRolloutText;
-                  options?.onText?.(currentText);
-                } else {
-                  lastRolloutText = next.lastRolloutText;
-                }
-              }
+              finalText = event.text;
               break;
 
             case 'task_complete':
               if (event.lastAgentMessage) {
-                const next = appendRolloutPreviewText(currentText, lastRolloutText, event.lastAgentMessage);
-                if (next.currentText !== currentText) {
-                  currentText = next.currentText;
-                  lastRolloutText = next.lastRolloutText;
-                  options?.onText?.(currentText);
-                } else {
-                  lastRolloutText = next.lastRolloutText;
-                }
+                finalText = event.lastAgentMessage;
               }
               completed = true;
+              break;
+
+            case 'turn_aborted':
+              interrupted = true;
               break;
 
             default:
@@ -1693,12 +1733,12 @@ export class JsonFileStore implements BridgeStore {
           }
         }
 
-        if (completed) {
+        if (completed || interrupted) {
           break;
         }
       }
 
-      if (completed) {
+      if (completed || interrupted) {
         break;
       }
       if (!sawNewData && Date.now() - lastActivityMs > LOCAL_THREAD_BUSY_STALE_MS) {
@@ -1711,7 +1751,7 @@ export class JsonFileStore implements BridgeStore {
     return {
       busy: true,
       completed,
-      finalText: currentText,
+      finalText: finalText || currentText,
     };
   }
 

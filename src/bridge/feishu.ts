@@ -322,7 +322,14 @@ export class FeishuAdapter implements BridgeAdapter {
         : status === 'error'
           ? '❌ Error'
           : '⚠️ Interrupted';
-      const { text, filePaths } = extractLocalFileReferences(finalText);
+      const streamedText = state.text.trim();
+      const finalContent = finalText.trim();
+      const shouldSendSeparateFinalCard = status === 'completed'
+        && Boolean(streamedText)
+        && Boolean(finalContent)
+        && finalContent !== streamedText;
+      const cardSourceText = shouldSendSeparateFinalCard ? streamedText : finalText;
+      const { text, filePaths } = extractLocalFileReferences(cardSourceText);
       await this.restClient.im.message.patch({
         path: { message_id: state.messageId },
         data: {
@@ -335,6 +342,10 @@ export class FeishuAdapter implements BridgeAdapter {
 
       for (const filePath of filePaths) {
         await this.sendLocalAttachment(chatId, filePath);
+      }
+
+      if (shouldSendSeparateFinalCard) {
+        await this.sendMarkdown(chatId, finalText, replyToMessageId);
       }
 
       this.activeCards.delete(chatId);
